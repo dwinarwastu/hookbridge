@@ -1,98 +1,242 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Hookbridge
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+> Production-grade webhook gateway — built to show real-world backend architecture.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Built with **NestJS**, **BullMQ**, **Redis**, and **PostgreSQL**. Receives webhooks from third-party providers (Stripe, GitHub, Midtrans), validates signatures, and fans out events to internal services via queues.
 
-## Description
+---
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Tech Stack
 
-## Project setup
+| Layer | Technology |
+|---|---|
+| Framework | NestJS |
+| Queue | BullMQ + Redis |
+| Database | PostgreSQL + TypeORM |
+| Containerization | Docker + Docker Compose |
 
-```bash
-$ npm install
+---
+
+## How It Works
+
+1. **Receive** — Third-party provider sends a webhook to `POST /webhook/:provider`
+2. **Validate** — Signature is verified using provider-specific HMAC algorithm
+3. **Log** — Webhook payload is saved to PostgreSQL (`status: received`)
+4. **Enqueue** — Job is pushed to BullMQ for async processing
+5. **Fan-out** — Worker finds all active subscriptions matching the provider + event type, then routes the event to each subscriber's target queue
+6. **Dead letter** — If all retry attempts are exhausted, the job is moved to the dead letter queue and status is marked `dead`
+
+Each provider has its own signature validation logic — swapping or adding a provider only requires implementing the `IProvider` interface.
+
+---
+
+## Project Structure
+
+```
+src/
+├── webhook/              # HTTP entry point, receive webhooks from third party
+├── queue/                # BullMQ queue declarations
+├── workers/              # Job processor, fan-out logic
+├── provider/             # Signature validation per provider
+│   └── providers/
+│       ├── github.provider.ts
+│       ├── stripe.provider.ts
+│       └── midtrans.provider.ts
+├── subscription/         # Internal service subscription management
+└── common/
+    ├── entities/
+    ├── enums/
+    └── interfaces/
 ```
 
-## Compile and run the project
+---
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js 22+
+- Docker & Docker Compose
+
+### Run with Docker
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+cp .env.example .env
+# fill in your credentials
+docker compose up -d
 ```
 
-## Run tests
+### Run locally
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm install
+npm run start:dev
 ```
 
-## Deployment
+---
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## Environment Variables
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+| Variable | Description |
+|---|---|
+| `NODE_ENV` | `development` or `production` |
+| `DB_HOST` | PostgreSQL host |
+| `DB_PORT` | PostgreSQL port (default: `5432`) |
+| `DB_USER` | PostgreSQL user |
+| `DB_PASS` | PostgreSQL password |
+| `DB_NAME` | PostgreSQL database name |
+| `REDIS_HOST` | Redis host |
+| `REDIS_PORT` | Redis port (default: `6379`) |
+| `GITHUB_WEBHOOK_SECRET` | GitHub webhook secret |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook secret |
+| `MIDTRANS_SERVER_KEY` | Midtrans server key |
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+> In `development`, signature validation is skipped automatically.
+
+---
+
+## API Reference
+
+### Receive a webhook
+
+```
+POST /webhook/:provider
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+| Param | Values |
+|---|---|
+| `provider` | `github`, `stripe`, `midtrans` |
 
-## Resources
+**Response**
 
-Check out a few resources that may come in handy when working with NestJS:
+```json
+{
+  "id": "ef241bb7-15f4-4d66-82c4-56b331e96533",
+  "status": "received"
+}
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+---
 
-## Support
+### Check webhook status
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```
+GET /webhook/:id/status
+```
 
-## Stay in touch
+**Response**
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+```json
+{
+  "id": "ef241bb7-15f4-4d66-82c4-56b331e96533",
+  "provider": "stripe",
+  "status": "delivered",
+  "eventType": "payment_intent.succeeded",
+  "payload": {},
+  "attemptCount": 1,
+  "errorMessage": null,
+  "deliveredAt": "2026-05-12T07:49:02.993Z",
+  "createdAt": "2026-05-12T07:49:02.953Z",
+  "updatedAt": "2026-05-12T07:49:02.994Z"
+}
+```
 
-## License
+---
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+### Register a subscription
+
+Internal services register which events they want to receive.
+
+```
+POST /subscription
+```
+
+```json
+{
+  "name": "order-service",
+  "provider": "stripe",
+  "eventType": "payment_intent.succeeded",
+  "targetQueue": "order-queue"
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `name` | `string` | Yes | Internal service name |
+| `provider` | `github \| stripe \| midtrans` | Yes | Provider to subscribe to |
+| `eventType` | `string` | Yes | Event type to listen for |
+| `targetQueue` | `string` | Yes | BullMQ queue name to push the event to |
+| `isActive` | `boolean` | No | Default: `true` |
+
+---
+
+### List all subscriptions
+
+```
+GET /subscription
+```
+
+---
+
+### Toggle subscription active status
+
+```
+PATCH /subscription/:id/toggle
+```
+
+---
+
+### Remove a subscription
+
+```
+DELETE /subscription/:id
+```
+
+---
+
+## Webhook Status
+
+| Status | Description |
+|---|---|
+| `received` | Webhook received and saved |
+| `processing` | Worker picked up the job |
+| `delivered` | Successfully fanned out to all subscribers |
+| `failed` | Retry attempts in progress |
+| `dead` | All retries exhausted, moved to dead letter queue |
+
+---
+
+## Retry Strategy
+
+Failed jobs are retried automatically with exponential backoff.
+
+| Attempt | Delay |
+|---|---|
+| 1st retry | 5s |
+| 2nd retry | 10s |
+| 3rd retry | 20s |
+
+After 3 failed attempts, the job is moved to the dead letter queue and marked `dead`.
+
+---
+
+## Adding a New Provider
+
+1. Create a new provider class under `src/provider/providers/`
+2. Implement the `IProvider` interface
+
+```typescript
+export interface IProvider {
+  validate(payload: Buffer, headers: Record<string, unknown>): boolean;
+  extractEventType(payload: Record<string, unknown>): string;
+}
+```
+
+3. Register the provider in `provider.module.ts` and `provider.service.ts`
+4. Add the provider value to `ProviderEnum`
+
+---
+
+## Architecture Decisions
+
+See [docs/adr](./docs/adr) for architecture decision records explaining the key design choices behind this service.
