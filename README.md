@@ -1,5 +1,7 @@
 # Hookbridge
 
+![CI](https://github.com/dwinarwastu/hookbridge/actions/workflows/ci.yml/badge.svg)
+
 > Production-grade webhook gateway — built to show real-world backend architecture.
 
 Built with **NestJS**, **BullMQ**, **Redis**, and **PostgreSQL**. Receives webhooks from third-party providers (Stripe, GitHub, Midtrans), validates signatures, and fans out events to internal services via queues.
